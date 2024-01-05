@@ -1,13 +1,14 @@
-from fastapi import FastAPI, Depends, HTTPException, status, Security
+from typing import List
+from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, create_engine
-from sqlalchemy.orm import sessionmaker, relationship, Session
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, ForeignKey, DateTime
+from sqlalchemy.orm import sessionmaker, relationship
 from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.sql import func
 from pydantic import BaseModel
-from jose import JWTError, jwt
 from passlib.context import CryptContext
+from jose import jwt
 from datetime import datetime, timedelta
-import uvicorn
 
 # Configuration
 DATABASE_URL = "sqlite:///./test.db"
@@ -26,7 +27,7 @@ class Department(Base):
     id = Column(Integer, primary_key=True, index=True)
     department_name = Column(String, index=True)
     submitted_by = Column(String)
-    updated_at = Column(String)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     students = relationship("Student", back_populates="department")
     courses = relationship("Course", back_populates="department")
@@ -38,7 +39,7 @@ class Student(Base):
     department_id = Column(Integer, ForeignKey('departments.id'))
     class_id = Column(String, index=True)
     submitted_by = Column(String)
-    updated_at = Column(String)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     department = relationship("Department", back_populates="students")
     attendance_logs = relationship("AttendanceLog", back_populates="student")
@@ -52,7 +53,7 @@ class Course(Base):
     lecture_hours = Column(Integer)
     class_id = Column(String, index=True)
     submitted_by = Column(String)
-    updated_at = Column(String)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     department = relationship("Department", back_populates="courses")
     attendance_logs = relationship("AttendanceLog", back_populates="course")
@@ -64,7 +65,7 @@ class AttendanceLog(Base):
     course_id = Column(Integer, ForeignKey('courses.id'))
     present = Column(Boolean)
     submitted_by = Column(String)
-    updated_at = Column(String)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     student = relationship("Student", back_populates="attendance_logs")
     course = relationship("Course", back_populates="attendance_logs")
@@ -78,7 +79,7 @@ class User(Base):
     email = Column(String, unique=True)
     hashed_password = Column(String)
     submitted_by = Column(String)
-    updated_at = Column(String)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 # Initialize DB
 def init_db():
@@ -115,114 +116,74 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # OAuth2
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
-# Pydantic models
+# Pydantic models for CRUD operations
+class DepartmentCreate(BaseModel):
+    department_name: str
+
+class DepartmentOut(BaseModel):
+    id: int
+    department_name: str
+    class Config:
+        orm_mode = True
+
+class StudentCreate(BaseModel):
+    full_name: str
+    department_id: int
+    class_id: str
+
+class StudentOut(BaseModel):
+    id: int
+    full_name: str
+    department_id: int
+    class_id: str
+    class Config:
+        orm_mode = True
+
+class CourseCreate(BaseModel):
+    course_name: str
+    department_id: int
+    semester: str
+    lecture_hours: int
+    class_id: str
+
+class CourseOut(BaseModel):
+    id: int
+    course_name: str
+    department_id: int
+    semester: str
+    lecture_hours: int
+    class_id: str
+    class Config:
+        orm_mode = True
+
+class AttendanceLogCreate(BaseModel):
+    student_id: int
+    course_id: int
+    present: bool
+
+class AttendanceLogOut(BaseModel):
+    id: int
+    student_id: int
+    course_id: int
+    present: bool
+    class Config:
+        orm_mode = True
+
 class UserCreate(BaseModel):
     username: str
     email: str
+    full_name: str
+    type: str
     password: str
 
-class Token(BaseModel):
-    access_token: str
-    token_type: str
-
-class TokenData(BaseModel):
-    username: str | None = None
-
-
-# Pydantic schemas for CRUD operations on Department
-class DepartmentBase(BaseModel):
-    department_name: str
-
-class DepartmentCreate(DepartmentBase):
-    pass
-
-class Department(DepartmentBase):
+class UserOut(BaseModel):
     id: int
-    submitted_by: str
-    updated_at: str
-
+    username: str
+    email: str
+    full_name: str
+    type: str
     class Config:
         orm_mode = True
-      
-class StudentBase(BaseModel):
-  full_name: str
-  department_id: int
-  class_id: str
-
-class StudentCreate(StudentBase):
-  pass
-
-class StudentUpdate(StudentBase):
-  pass
-
-class StudentOut(StudentBase):
-  id: int
-  submitted_by: str
-  updated_at: str
-
-  class Config:
-      orm_mode = True
-
-class CourseBase(BaseModel):
-  course_name: str
-  department_id: int
-  semester: str
-  lecture_hours: int
-  class_id: str
-
-class CourseCreate(CourseBase):
-  pass
-
-class CourseUpdate(CourseBase):
-  pass
-
-class CourseOut(CourseBase):
-  id: int
-  submitted_by: str
-  updated_at: str
-
-  class Config:
-      orm_mode = True
-
-class AttendanceLogBase(BaseModel):
-  student_id: int
-  course_id: int
-  present: bool
-
-class AttendanceLogCreate(AttendanceLogBase):
-  pass
-
-class AttendanceLogUpdate(AttendanceLogBase):
-  pass
-
-class AttendanceLogOut(AttendanceLogBase):
-  id: int
-  submitted_by: str
-  updated_at: str
-
-  class Config:
-      orm_mode = True
-
-class UserBase(BaseModel):
-  username: str
-  email: str
-  full_name: str
-  type: str
-
-class UserCreate(UserBase):
-  password: str
-
-class UserUpdate(UserBase):
-  pass
-
-class UserOut(UserBase):
-  id: int
-  submitted_by: str
-  updated_at: str
-
-  class Config:
-      orm_mode = True
-
 
 # Create a token
 def create_access_token(data: dict, expires_delta: timedelta | None = None):
@@ -263,6 +224,7 @@ async def get_current_user(db: Session = Depends(get_db), token: str = Depends(o
     return user
 
 app = FastAPI()
+
 
 @app.post("/token", response_model=Token)
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
@@ -419,11 +381,8 @@ def delete_user(user_id: int, db: Session = Depends(get_db)):
 
 
 
-
-
-# Run init_db when starting the app
-init_db()
-
 # Run the app
 if __name__ == "__main__":
+    # Run init_db when starting the app
+    init_db()
     uvicorn.run(app, host="0.0.0.0", port=8000)
